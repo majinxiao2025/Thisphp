@@ -16,5 +16,8 @@
 </head>
 <body>
 hello world!
+<?php
+    print_r($this->data)
+?>
 </body>
 </html>

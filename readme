@@ -1,0 +1,44 @@
+controller控制器目录
+下新建控制文件以clr_ 开头
+clr_index.php
+
+class 公用类目录:
+新建类文件以cls_ 开头
+cls_index.php
+
+view视图文件夹下新建文件方式为:
+版本目录/控制目录/视图文件
+1.0/index/index.php
+
+/index.php 是主框架索引文件
+/core.php 主内核
+/controller.php 主控制器
+/config.php 全局配置
+/.htaccess apache伪静态文件
+
+###使用方式
+直接将框架上传到站点目录，配置apache 或者nignx 访问网站会看到Hello world
+
+新增访问目录或者页面
+请在controller 下新建类
+比如你要访问/item 目录
+则
+add:
+controller/clr_item.php
+在clr_item.php内容为：
+class clr_item extends controller
+{
+    public function __construct()
+    {
+        parent::__construct();
+    }
+    public function index()
+    {
+        $this->view();
+    }
+}
+在view下新增php html页面
+比如当前是1.0版本
+则添加文件view/1.0/item/index.php
+内容就是php html内容,参照view/1.0/index/index.php
+
