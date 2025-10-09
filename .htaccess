@@ -1,0 +1,10 @@
+RewriteEngine On
+
+#自定义伪静态
+RewriteRule ^$ index.php?class=index&method=index [QSA,L]
+RewriteRule ^([\w_]{1,20})$ index.php?class=$1&method=index [QSA,L]
+RewriteRule ^([a-z_]{1,20})/([a-zA-Z0-9_]{2,20})$ index.php?class=$1&method=$2 [QSA,L]
+
+#框架伪静态规则 不准更改
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME} !-f
