@@ -14,10 +14,11 @@ class cls_postgresql
     public string $nin=''; //供not in 所使用的值
     private string $tablePre = 'bt_';
     public int $limit = 0;
+    public int $zpage = 30; //默认最大页数
     public int $getInsertId = 0;
     public string $queryString = ''; //供外部调用查看的SQL串
     private string $user = 'daemon';
-    private string $password = 'password';
+    private string $password = 'marlis123.';
     public function __construct()
     {
         $this->conn = pg_connect("host=localhost port=5432 dbname=btba user=$this->user password=$this->password");
@@ -31,7 +32,7 @@ class cls_postgresql
     public function query($query_string){
         if(!$this->conn){
             header("Content-Type: text/html; charset=UTF-8");
-            exit('<div style="text-align: center;margin-top: 30px"><h1>很抱歉,网站升级中,请稍后访问...</h1></div>');
+            exit('<div style="text-align: center;margin-top: 30px"><h1>很抱歉,网站升级中,请稍后访问...</h1><p>All Rights Reserved. BTBA. 2014-2025</p></div>');
         }
 
         $query = pg_query($this->conn,$query_string);
@@ -111,7 +112,8 @@ class cls_postgresql
         $where_from = $this->where($where);
         $limit = '';
         if ($this->limit){
-            $skip = ((get('page')?:1) - 1) * $this->limit;
+            $page = min(get('page')?:1,$this->zpage);
+            $skip = ($page - 1) * $this->limit;
             $limit = "limit $this->limit offset $skip";
             $this->selectCount($table,$where_from);
         }
