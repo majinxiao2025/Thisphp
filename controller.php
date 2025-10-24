@@ -45,10 +45,11 @@ class controller extends core
     {
         $echo = '';
         $page = get('page')?:1;
+        $zPage = $GLOBALS['total']?ceil($GLOBALS['total']/$GLOBALS['limit']):$pageMax;
+        $zPage = min($zPage, $pageMax);
+        if($page>$zPage)return false;
         $url =$param?'?'.$param:parse_url($_SERVER['REQUEST_URI'])['path'];
         $endParam = $param?'&':'?';
-        $zPage = $GLOBALS['total']?ceil($GLOBALS['total']/$GLOBALS['limit']):$pageMax;
-        if($page>$zPage)return false;
         $end = floor($pageNum/2)?:1;
 
         $echo.= '<li><a ';
