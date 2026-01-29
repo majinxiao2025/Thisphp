@@ -79,3 +79,12 @@ function post(bool|string $name=false, bool|string $val=false): mixed
     }
     return (object)$_POST;
 }
+/**
+ * @return mixed
+ * 2026-01-29 17:52:13
+ * 处理前端发送的JSON数据格式
+ */
+function json(): mixed
+{
+    return json_decode(file_get_contents('php://input'));
+}
