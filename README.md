@@ -19,11 +19,15 @@ cls_index.php
 如果项目维护或需要升级版本
 则可在 view目录下新建个2.0目录或者其它名称，然后在配置文件中config.php中修改，即可丝滑升级
 
-#### /index.php 是主框架索引文件
-/core.php 主内核
-/controller.php 主控制器
-/config.php 全局配置
-/.htaccess apache伪静态文件
+#### 框架核心文件
+- `/index.php` 主引导文件
+- `/core.php` 主内核
+- `/controller.php` 主控制器
+- `/config.php` 全局配置
+- `/.htaccess` apache伪静态文件
+- `/view` 视图文件夹，存储html、php 等
+- `/class` 公用类；cls_开头
+- `/controller` 控制器文件夹，下面新建以 clr_开头的文件
 
 ### 使用方式
 直接将框架上传到站点目录，配置apache 或者nignx 访问网站会看到Hello world
@@ -33,7 +37,7 @@ cls_index.php
 比如你要访问/item 目录
 则
 add:
-controller/clr_item.php
+`controller/clr_item.php`
 在clr_item.php内容为：
 
 ```
