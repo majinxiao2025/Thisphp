@@ -14,6 +14,8 @@ cls_index.php
 view视图文件夹下新建文件方式为:
 版本目录/控制目录/视图文件
 1.0/index/index.php
+如果项目维护或需要升级版本
+则可在 view目录下新建个2.0目录或者其它名称，然后在配置文件中config.php中修改，即可丝滑升级
 
 /index.php 是主框架索引文件
 /core.php 主内核
