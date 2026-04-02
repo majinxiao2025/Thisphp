@@ -180,4 +180,25 @@ class controller extends core
     {
         header("location: $url");exit;
     }
+
+    /**
+     * @return false|mixed|string
+     * 2026-04-02 13:48:51
+     * 获取客户端 IP
+     */
+    protected function getIp(){
+        $unknown = 'unknown';
+        if (isset($_SERVER['HTTP_X_FORWARDED_FOR']) && $_SERVER['HTTP_X_FORWARDED_FOR'] && strcasecmp($_SERVER['HTTP_X_FORWARDED_FOR'], $unknown)) {
+            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+        }
+        elseif(isset($_SERVER['REMOTE_ADDR']) && $_SERVER['REMOTE_ADDR'] && strcasecmp($_SERVER['REMOTE_ADDR'], $unknown)) {
+            $ip = $_SERVER['REMOTE_ADDR'];
+        }
+        else{
+            $ip = '未获取到IP';
+        }
+        $exp_ip = explode(',', $ip);
+        if (str_contains($ip, ',')) $ip = reset($exp_ip);
+        return $ip;
+    }
 }
