@@ -186,7 +186,8 @@ class controller extends core
      * 2026-04-02 13:48:51
      * 获取客户端 IP
      */
-    protected function getIp(){
+    protected function getIp(): mixed
+    {
         $unknown = 'unknown';
         if (isset($_SERVER['HTTP_X_FORWARDED_FOR']) && $_SERVER['HTTP_X_FORWARDED_FOR'] && strcasecmp($_SERVER['HTTP_X_FORWARDED_FOR'], $unknown)) {
             $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
