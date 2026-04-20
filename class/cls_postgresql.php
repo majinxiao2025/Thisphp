@@ -142,7 +142,21 @@ class cls_postgresql
         }
         return $where;
     }
-
+    /**
+     * 查询一条数据并返回
+     * @param $table
+     * @param string $where
+     * @param string $field
+     * @return mixed
+     * 2021-11-27 20:11:25
+     * update 2026-04-20 23:14:53
+     */
+    public function select_one($table,string|array|object $where='',string $field='*'): mixed
+    {
+        $where_from = $this->where($where);
+        $result = $this->select($table,$where_from.' limit 1',$field)[0];
+        return str_contains($field,',')||$field=='*'?$result:$result->$field;
+    }
     /**
      * @param $table
      * @param string|array|object $where
@@ -267,20 +281,6 @@ class cls_postgresql
         }
         $query = $this->query("select $field from $this->tablePre$table[0] LEFT JOIN $this->tablePre$table[1] using($using) $where_form $limit");
         return $this->fetch_row($query);
-    }
-
-    /**
-     * 查询一条数据并返回
-     * @param $table
-     * @param string $where
-     * @param string $field
-     * @return mixed
-     * 2021-11-27 20:11:25
-     */
-    public function select_one($table,string $where='',string $field='*'): mixed
-    {
-        $result = $this->select($table,$where.' limit 1',$field)[0];
-        return str_contains($field,',')||$field=='*'?$result:$result->$field;
     }
 
     /**
