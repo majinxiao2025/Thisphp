@@ -1,5 +1,7 @@
 <?php
 //error_reporting(0);
+use PgSql\Result;
+
 /**
  * Copyright © 2017-2021 Braveten Technology Co., Ltd.
  * Engineer: Makin
@@ -12,24 +14,28 @@ class cls_postgresql
     public \PgSql\Connection|false $conn;
     public string $nin_field='';
     public string $nin=''; //供not in 所使用的值
-    private string $tablePre = 'bt_';
+    public string $tablePre = 'bt_';
     public int $limit = 0;
     public int $zpage = 30; //默认最大页数
     public int $getInsertId = 0;
     public string $queryString = ''; //供外部调用查看的SQL串
     private string $user = 'daemon';
-    private string $password = 'marlis123.';
+    private string $password = '';
     public function __construct()
     {
-        $this->conn = pg_connect("host=localhost port=5432 dbname=btba user=$this->user password=$this->password");
+        $this->conn = pg_connect("host=localhost port=5432 dbname=btba user=$this->user password=$this->password",PGSQL_CONNECT_FORCE_NEW);
+
+        //$result = pg_query($this->conn, "SELECT id, tags FROM bt_data WHERE id = 69946e"); // 假设 tags 是 text[] 类型
+        //$row = pg_fetch_assoc($result);
+        //print_r($row['tags']);
     }
 
     /**
      * @param $query_string
-     * @return resource|false 2021-11-21 09:22:00
-     * 2021-11-21 09:22:00
+     * @return Result
      */
-    public function query($query_string){
+    public function query($query_string):PgSql\Result
+    {
         if(!$this->conn){
             header("Content-Type: text/html; charset=UTF-8");
             exit('<div style="text-align: center;margin-top: 30px"><h1>很抱歉,网站升级中,请稍后访问...</h1><p>All Rights Reserved. BTBA. 2014-2025</p></div>');
@@ -48,6 +54,7 @@ class cls_postgresql
      * @return array
      * 遇到json会自动转换成数组(对于数据库使用数组类型的,在字段处进行to_json转换)
      * 2021-11-21 09:24:59
+     * 2026-02-05 16:05:07 标记可能要废弃!
      */
     public function fetch_row($query): array
     {
@@ -71,8 +78,6 @@ class cls_postgresql
                 $not[] = $row->$ninField;
             }
         }
-
-
         if($not){
             $this->nin .= ($this->nin?',':'').implode(',',$not);
         }
@@ -81,7 +86,46 @@ class cls_postgresql
     }
 
     /**
-     * @param array|object|string $where
+     * @param $query
+     * @return array
+     * 2026-02-05 15:27:04
+     * 查询并返回数组对象
+     */
+    public function fetch_object($query): array
+    {
+        $ary = $not = [];
+        while ($row = pg_fetch_object($query)) {
+            $arr = [];
+            foreach ($row as $field => $val) {
+                #如果遇到输出{}开头和结尾的数据强制解析成数组
+                if ($val[0] == '{' && $val[-1] == '}') {
+                    $val = trim($val, '{}');
+                    $val = explode(',', $val);
+                } else if ($val[0] == '[' && $val[-1] == ']') {
+                    $val = json_decode($val);
+                }
+                $arr[$field] = $val;
+            }
+            $ary[] = (object)$arr;
+            $ninField = $this->nin_field;
+            if($ninField&&$arr[$ninField]){
+                $not[] = $arr[$ninField];
+            }
+        }
+        if($not){
+            $this->nin .= ($this->nin?',':'').implode(',',$not);
+        }
+        return $ary;
+    }
+
+    public function nin_field($nin_field)
+    {
+
+    }
+
+
+    /**
+     * @param array|object|string|int $where
      * @param array $char
      * @return string
      * 2021-11-26 12:22:24
@@ -106,6 +150,7 @@ class cls_postgresql
      * @return array
      * 2021-11-21 09:25:06
      * update 2021-11-26 17:16:14
+     * update 2026-02-05 15:28:48
      */
     public function select($table, string|array|object $where='', string $field='*'): array
     {
@@ -118,7 +163,7 @@ class cls_postgresql
             $this->selectCount($table,$where_from);
         }
         $query = $this->query("select $field from $this->tablePre$table $where_from $limit");
-        return $this->fetch_row($query);
+        return $this->fetch_object($query);
     }
 
     /**
@@ -140,7 +185,7 @@ class cls_postgresql
      * update 2021-11-26 17:16:05
      * @return mixed
      */
-    public function selectCount($table, string $where=''): mixed
+    public function select_count($table, string $where=''): mixed
     {
         if(str_contains($where, 'order by')){
             $where = preg_replace('/order by.*[desc|asc]/','',$where);
@@ -220,7 +265,7 @@ class cls_postgresql
             $limit = "limit $this->limit offset $skip";
             str_contains($where_form,'where')?$this->selectCount($table[0],$where_form):$this->select_id_seq($table[0]);
         }
-        $query = $this->query("select $field from $this->tablePre$table[0] join $this->tablePre$table[1] using($using) $where_form $limit");
+        $query = $this->query("select $field from $this->tablePre$table[0] LEFT JOIN $this->tablePre$table[1] using($using) $where_form $limit");
         return $this->fetch_row($query);
     }
 
@@ -271,7 +316,6 @@ class cls_postgresql
         $this->conn = pg_connect("host=localhost port=5432 dbname=btba user=$this->user password=$this->password");
         return (bool)$this->conn;
     }
-
     /**
      * @return bool
      * 2025-07-31 16:09:13
