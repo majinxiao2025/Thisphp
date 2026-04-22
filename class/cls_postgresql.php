@@ -142,10 +142,11 @@ class cls_postgresql
         }
         return $where;
     }
+
     /**
      * 查询一条数据并返回
      * @param $table
-     * @param string $where
+     * @param string|array|object $where
      * @param string $field
      * @return mixed
      * 2021-11-27 20:11:25
@@ -174,7 +175,7 @@ class cls_postgresql
             $page = min(get('page')?:1,$this->zpage);
             $skip = ($page - 1) * $this->limit;
             $limit = "limit $this->limit offset $skip";
-            $this->selectCount($table,$where_from);
+            $this->select_count($table,$where_from);
         }
         $query = $this->query("select $field from $this->tablePre$table $where_from $limit");
         return $this->fetch_object($query);
