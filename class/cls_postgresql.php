@@ -48,43 +48,60 @@ class cls_postgresql
         $this->queryString = $query_string.";\n";
         return $query;
     }
-
     /**
      * @param $query
      * @return array
      * 遇到json会自动转换成数组(对于数据库使用数组类型的,在字段处进行to_json转换)
      * 2021-11-21 09:24:59
      * 2026-02-05 16:05:07 标记可能要废弃!
+     * 2026-05-27 19:55:37 改良数据值有[]误认为json字符串
      */
     public function fetch_row($query): array
     {
         if(!$query){
             exit('query error');
         }
-        $arr = [];$not=[];
+        $arr = [];
+        $not = [];
 
         while ($row = pg_fetch_object($query)){
-            foreach ($row as $field=>$val){
-                if($val){
-                    $n = strlen($val)-1;
-                    if($val[0]=='['&&$val[$n]==']'){
-                        $row->$field = json_decode($val);
+            foreach ($row as $field => $val){
+                // 改进1：更严格的空值检查
+                if($val === null || $val === ''){
+                    continue;
+                }
+                // 改进2：只对看起来像JSON的字符串进行解析
+                if(is_string($val) && strlen($val) >= 2){
+                    $firstChar = $val[0];
+                    $lastChar = $val[strlen($val) - 1];
+
+                    // 真正的JSON格式：{"key":"value"} 或 ["a","b"]
+                    if(($firstChar === '{' && $lastChar === '}') ||
+                        ($firstChar === '[' && $lastChar === ']')){
+                        $decoded = json_decode($val);
+                        if($decoded !== null && json_last_error() === JSON_ERROR_NONE){
+                            $row->$field = $decoded;
+                        }
+                        // 如果JSON解析失败，保持原值不变
                     }
+                    // [字符串] 这种格式不会被处理，保持原样
                 }
             }
             $arr[] = $row;
+
             $ninField = $this->nin_field;
-            if($ninField&&$row->$ninField){
+            // 改进3：使用 isset 避免未定义属性警告
+            if($ninField && isset($row->$ninField) && $row->$ninField){
                 $not[] = $row->$ninField;
             }
         }
+
         if($not){
-            $this->nin .= ($this->nin?',':'').implode(',',$not);
+            $this->nin .= ($this->nin ? ',' : '') . implode(',', $not);
         }
 
         return $arr;
     }
-
     /**
      * @param $query
      * @return array
