@@ -10,7 +10,7 @@ class cls_redis
     public Redis $redis;
     public function __construct($className){
         $redis = new Redis();
-        $result = $redis->connect('127.0.0.1', 6600);//,['auth'=>'makin123*']
+        $result = $redis->connect('127.0.0.1', 6600);//需要密码时传第三个参数 ['auth'=>'密码']
         if(!$result){
             exit('Server is error!');
         }
@@ -25,9 +25,10 @@ class cls_redis
      */
     protected function RandInt(int $length=10): string
     {
-        $int=substr(str_replace('.','',microtime(true)),0,$length);
-        $str = str_shuffle($int);
-        $str[0] = $str[0]?:1;
+        $str = (string)random_int(1,9);
+        for($i=1; $i<$length; $i++){
+            $str .= random_int(0,9);
+        }
         return $str;
     }
 

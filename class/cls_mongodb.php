@@ -69,7 +69,7 @@ class cls_Mongodb
             $options['projection']=$fields;
         }
         if($this->limitNum){
-            $skip = ((get('page')?:1) - 1) * $this->limitNum;
+            $skip = (max(1,(int)get('page')) - 1) * $this->limitNum;
             $options['skip']=$skip;$options['limit']=$this->limitNum;
             $GLOBALS['limitNum'] = $this->limitNum;
         }

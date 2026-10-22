@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Copyright © 2017-2025 Braveten Technology Co., Ltd.
  * Engineer: Makin
@@ -8,19 +7,26 @@
  */
 
 use Meilisearch\Client;
-use Meilisearch\Contracts\DocumentsQuery;
 
 class cls_meilisearch
 {
     private $index;
     /**
-     * @return void
-     * 操作范例
+     * 索引 pagination.maxTotalHits 的值，超出这个位置的结果取不出来
+     * 改这里之前先改索引设置，两边必须一致
+     */
+    private const MAX_TOTAL_HITS = 1000;
+
+    /**
+     * update 2026-10-22 整合自 btba_www
+     * 连接参数移到 config.php 的 meilisearch 节点；前台只做检索，请配置只有 search 权限的 key，
+     * 不要用 master key(它能改索引设置、能清空全部文档)
      */
     public function __construct(){
         require_once __DIR__. '/meilisearch/vendor/autoload.php';
-        $client = new Client('http://127.0.0.1:7700', 'At43V9WVh0yRI_piRNdNs4aTJZHnuWLm74IPV-PtahE');
-        $this->index = $client->index('index_db');
+        $conf = $GLOBALS['config']->meilisearch;
+        $client = new Client($conf->url, $conf->key);
+        $this->index = $client->index($conf->index);
     }
 
     /**
@@ -33,73 +39,30 @@ class cls_meilisearch
     {
         return $this->index->addDocuments($json);
     }
-    public function index()
-    {
-        //$fields=[ 'did','tags','title', 'image','director','stars','country',''];
 
-        echo '<pre>';
-
-        /*//修改最大搜索返回结果maxTotalHits为10万
-        $index->updateSettings(['pagination' => [
-                'maxTotalHits' => 10000
-            ]
-        ]);*/
-        //获取设置
-        //$get = $index->getSettings();
-        //print_r($get);
-        //禁止id被索引
-        //displayedAttributes
-        //['did,title,image,director,stars,country,score,showdate,text,updated']
-        $get = $this->index->updateDisplayedAttributes(['did','title','image','director','stars','country','score','showdate','torrents','update']);
-        //$get = $this->index->getDisplayedAttributes();
-        print_r($get);
-        //对想要的字段进行排序
-        //$res=$index->updateSortableAttributes(['id','update']);
-        //print_r($res);exit();
-        //
-        /*$index->updateFilterableAttributes([
-            'display',[
-                'attributePatterns'=>['tags','stars','director','country'],
-                'features' => [
-                    'facetSearch' => true,
-                    'filter' => [
-                        'equality' => true,
-                        'comparison' => true,
-                    ],
-                ]
-            ]
-        ]);*/
-        //$get = $index->getFilterableAttributes();
-        //获取可过滤的属性
-
-        //$get = $client->index('btba')->getFilterableAttributes();
-        //$get=$index->search('', ['sort' => ['id:desc'],'limit' => 15,'filter'=>'display = 1']);
-
-        //$get->getHit();
-        //$get=$index->getDocuments((new DocumentsQuery())->setFilter(['display = 1'])->setLimit(5));
-        //$get = $index->getDocuments();
-        //var_dump($get);
-        //print_r($get);
-        echo '</pre>';
-
-       /* $documents = [
-            ['id' => 1,  'title' => 'Carol', 'genres' => ['Romance, Drama']],
-            ['id' => 2,  'title' => 'Wonder Woman', 'genres' => ['Action, Adventure']],
-            ['id' => 3,  'title' => 'Life of Pi', 'genres' => ['Adventure, Drama']],
-            ['id' => 4,  'title' => 'Mad Max: Fury Road', 'genres' => ['Adventure, Science Fiction']],
-            ['id' => 5,  'title' => 'Moana', 'genres' => ['Fantasy, Action']],
-            ['id' => 6,  'title' => 'Philadelphia', 'genres' => ['Drama']],
-        ];
-
-# If the index 'movies' does not exist, Meilisearch creates it when you first add the documents.
-        $index->addDocuments($documents); // => { "uid": 0 }*/
-    }
+    /*
+     * index() 已删除 —— 2026-10-22 整合自 btba_www
+     * 原方法里 updateDisplayedAttributes(...) 不是注释、会真正执行，谁调一次就会改掉线上索引的返回字段。
+     * 索引设置不该由前台修改，应放在后台脚本里执行。常用操作速查：
+     *   $idx = $this->index;
+     *   print_r($idx->getSettings());                 // 查看全部当前设置(修改前先存一份方便回滚)
+     *   $idx->updateSearchableAttributes([...]);      // 可搜字段；数组顺序 = 字段权重
+     *   $idx->updateFilterableAttributes([...]);      // 可过滤字段
+     *   $idx->updateDisplayedAttributes([...]);       // 返回哪些字段；["*"] = 全部
+     *   $idx->updateSortableAttributes([...]);        // 可排序字段
+     *   $idx->updatePagination(['maxTotalHits'=>N]);  // 改了必须同步改 MAX_TOTAL_HITS
+     * 所有 update* 都是异步任务，且会触发全量重建索引。
+     */
 
     /**
      * @param $query
      * @param int $limit
      * @return object
      * 2025-08-13 20:48:14 增加数据总数和每页数赋值
+     * update 2026-10-22 修复分页(整合自 btba_www)
+     * 原来用 limit/offset 检索，只能拿到 getEstimatedTotalHits()：一是对部分查询会高估几个数量级，
+     * 二是它不受 maxTotalHits 约束，据此算出的页码翻过去是空页。
+     * 改用分页检索拿 getTotalHits()，再用 real_total() 修正成真实可翻页数。
      */
     public function search($query,int $limit=10): object
     {
@@ -107,23 +70,51 @@ class cls_meilisearch
         if(!is_numeric($page)){
             exit('Invalid page error');
         }
-        $response = $this->index->search($query, ['limit' => $limit,'offset'=>$limit * ($page - 1),'filter'=>'display = 1']);//
+        $page = max(1,(int)$page);
+        $response = $this->index->search($query, ['page'=>$page,'hitsPerPage'=>$limit,'filter'=>'display = 1']);
+        $hits = $response->getHits();
+        $total = $this->real_total((int)$response->getTotalHits(), count($hits), $page, $limit);
         $GLOBALS['limit'] = $limit;
-        $GLOBALS['total'] = $response->getEstimatedTotalHits();
+        $GLOBALS['total'] = $total;
         return (object)[
-            'hits'=>$response->getHits(),
-            'total'=>$response->getEstimatedTotalHits(),
+            'hits'=>$hits,
+            'total'=>$total,
             'query'=>$response->getQuery(),
         ];
+    }
+
+    /**
+     * @param int $totalHits 检索接口报的总数
+     * @param int $count 本页实际拿到的条数
+     * @param int $page
+     * @param int $limit
+     * @return int 可翻页的真实总数
+     * 2026-10-22 整合自 btba_www
+     */
+    private function real_total(int $totalHits, int $count, int $page, int $limit): int
+    {
+        //计数器不能超过 maxTotalHits，否则会渲染出翻不动的页码
+        $cap = min($totalHits, self::MAX_TOTAL_HITS);
+        //本页取满，后面还有没有取不到，只能信计数器
+        if($count >= $limit){
+            return $cap;
+        }
+        //本页有数据但没取满 —— 正常翻页的最后一页，能精确算出总数
+        if($count > 0){
+            return min(($page - 1) * $limit + $count, self::MAX_TOTAL_HITS);
+        }
+        //本页为空：第一页就空说明确实没有结果；否则是手输的越界页码
+        return $page > 1 ? min($cap, ($page - 1) * $limit) : 0;
     }
 
     /**
      * @return array
      * 清空数据
      * 2025-07-31 11:36:42
+     * 2026-10-22 前台不应具备清库能力，默认注释掉(整合自 btba_www)；确需使用请在后台用 master key 调用
      */
-    public function clear(): array
+    /*public function clear(): array
     {
         return $this->index->deleteAllDocuments();
-    }
+    }*/
 }

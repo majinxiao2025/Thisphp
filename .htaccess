@@ -1,5 +1,9 @@
 RewriteEngine On
 
+#安全规则：禁止访问 .git .idea .DS_Store 等隐藏文件，以及除 index.php 外的 php 文件
+RewriteRule (^|/)\.(?!well-known/) - [F,L]
+RewriteRule ^(?!index\.php$).+\.php$ - [F,L]
+
 #自定义伪静态
 RewriteRule ^$ index.php?class=index&method=index [QSA,L]
 RewriteRule ^([\w_]{1,20})$ index.php?class=$1&method=index [QSA,L]

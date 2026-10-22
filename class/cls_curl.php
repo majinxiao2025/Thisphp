@@ -18,6 +18,21 @@ class cls_curl
     public $header=array();
     public $host;//供给外部使用
     public bool $get_header = false;
+    //是否校验HTTPS证书，默认校验；确需访问自签名证书站点时设为 false
+    public bool $verify_ssl = true;
+
+    /**
+     * 证书校验，并限制只能使用 http/https 协议（包括跳转后），防止 file:// 等协议读取本地文件
+     * @param $ch
+     * 2026-10-22
+     */
+    private function secure($ch): void
+    {
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $this->verify_ssl);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $this->verify_ssl?2:0);
+        curl_setopt($ch, CURLOPT_PROTOCOLS_STR, 'http,https');
+        curl_setopt($ch, CURLOPT_REDIR_PROTOCOLS_STR, 'http,https');
+    }
     public function host($url){
         $parse=parse_url($url);
         $this->host=$parse['host'];
@@ -26,9 +41,10 @@ class cls_curl
 
     public function enable_cookie($url){
         $pu=parse_url($url);
-        $dir=$_SERVER['DOCUMENT_ROOT'].'/cookie/';
+        //cookie 文件不能放在网站目录下，否则可被直接下载 2026-10-22
+        $dir=sys_get_temp_dir().'/thisphp_cookie/';
         if(!is_dir($dir)){
-            mkdir($dir);
+            mkdir($dir,0700);
         }
         $this->cookie_path=$dir.$pu['host'];
     }
@@ -40,8 +56,7 @@ class cls_curl
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS,3000);// 连接超时（毫秒）
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); //不验证证书
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false); //不验证证书
+        $this->secure($ch);
         curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0); //强制协议为1.0
         curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4 ); //强制使用IPV4协议解析域名
         curl_setopt($ch, CURLOPT_HEADER,$this->get_header);
@@ -73,6 +88,7 @@ class cls_curl
         $this->host($url);
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL,$url) ;
+        $this->secure($ch);
         curl_setopt($ch, CURLOPT_POST,1);
         curl_setopt($ch, CURLOPT_POSTFIELDS,$this->data);
         curl_setopt($ch, CURLOPT_BINARYTRANSFER, true);
@@ -107,8 +123,7 @@ class cls_curl
             curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS,3000);// 连接超时（毫秒）
             curl_setopt($ch, CURLOPT_TIMEOUT, 10);//接收信息超时
             curl_setopt($ch, CURLOPT_HTTPHEADER,$header?$header:$this->header());
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); //不验证证书
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false); //不验证证书
+            $this->secure($ch);
             if($cookie){
                 $this->enable_cookie($url);
                 curl_setopt($ch, CURLOPT_COOKIEJAR,$this->cookie_path);
@@ -159,6 +174,7 @@ class cls_curl
             $this->host($url);
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL,$url) ;
+            $this->secure($ch);
             curl_setopt($ch, CURLOPT_POST,1);
             curl_setopt($ch, CURLOPT_POSTFIELDS,$this->data);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -202,8 +218,7 @@ class cls_curl
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_PROXY,"http://".$proxy_ip);//
         curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); //不验证证书
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false); //不验证证书
+        $this->secure($ch);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_BINARYTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
@@ -233,6 +248,7 @@ class cls_curl
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_PROXY,'http://'.$proxy_ip);
         curl_setopt($ch, CURLOPT_URL,$url) ;
+        $this->secure($ch);
         curl_setopt($ch, CURLOPT_POST,count($this->data));
         curl_setopt($ch, CURLOPT_POSTFIELDS,$this->data);
         curl_setopt($ch, CURLOPT_HTTPHEADER,$this->header);
@@ -260,8 +276,7 @@ class cls_curl
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS,3000);// 连接超时（毫秒）
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); //不验证证书
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false); //不验证证书
+        $this->secure($ch);
         //curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0); //强制协议为1.0
         curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4 ); //强制使用IPV4协议解析域名
         if($cookie){

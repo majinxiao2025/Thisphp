@@ -19,31 +19,46 @@ class cls_postgresql
     public int $zpage = 30; //默认最大页数
     public int $getInsertId = 0;
     public string $queryString = ''; //供外部调用查看的SQL串
+    //当前连的是哪个库(master()/user()/switchDb() 会更新它)，被别处调用的共用逻辑可以先记下原来的库，用完再切回去
+    public string $currentDb = 'btba';
+    //创建它的 controller 实例(controller::__construct() 回填)，翻页超出范围时借它调 not404()
+    public mixed $owner = null;
     private string $user = 'daemon';
     private string $password = '';
     public function __construct()
     {
-        $this->conn = pg_connect("host=localhost port=5432 dbname=btba user=$this->user password=$this->password",PGSQL_CONNECT_FORCE_NEW);
+        $this->connect('btba');
+    }
 
-        //$result = pg_query($this->conn, "SELECT id, tags FROM bt_data WHERE id = 69946e"); // 假设 tags 是 text[] 类型
-        //$row = pg_fetch_assoc($result);
-        //print_r($row['tags']);
+    /**
+     * 连接指定数据库
+     * pg_pconnect 在同一个 PHP-FPM 进程内复用底层连接，切库/每次请求不必重新握手；
+     * 复用的连接可能残留上个请求没提交的事务，ROLLBACK 一次兜底(没有事务时是空操作)
+     * @param string $db
+     * @return bool
+     * 2026-10-22 整合自 btba_www
+     */
+    private function connect(string $db): bool
+    {
+        $this->conn = pg_pconnect("host=localhost port=5432 dbname=$db user=$this->user password=$this->password");
+        if($this->conn){
+            pg_query($this->conn,"ROLLBACK");
+        }
+        $this->currentDb = $db;
+        return (bool)$this->conn;
     }
 
     /**
      * @param $query_string
      * @return Result
      */
-    public function query($query_string):PgSql\Result
+    public function query($query_string):PgSql\Result|false
     {
-        if(!$this->conn){
-            header("Content-Type: text/html; charset=UTF-8");
-            exit('<div style="text-align: center;margin-top: 30px"><h1>很抱歉,网站升级中,请稍后访问...</h1><p>All Rights Reserved. BTBA. 2014-2025</p></div>');
-        }
-
+        $this->checkConn();
         $query = pg_query($this->conn,$query_string);
         if (!$query){
-            echo $query_string."\n".pg_last_error($this->conn)."\n";
+            //写入错误日志，不输出给浏览器，避免泄露SQL和表结构 2026-10-22
+            error_log('[pg] '.pg_last_error($this->conn).' | SQL: '.$query_string.' | URI: '.($_SERVER['REQUEST_URI'] ?? ''));
         }
         $this->queryString = $query_string.";\n";
         return $query;
@@ -150,14 +165,55 @@ class cls_postgresql
      */
     private function where(array|object|string|int $where,array $char=['where',' and']): string
     {
+        //注意：字符串形式的 $where 原样拼接，不能直接拼入用户输入，请使用数组/对象形式
         if (is_array($where) || is_object($where)){
             $w= '';
             foreach ($where as $key => $val){
-                $w .= ($w?$char[1]:$char[0])." $key=".(is_int($val)?$val:"'$val'");
+                $w .= ($w?$char[1]:$char[0])." ".$this->field($key)."=".$this->literal($val);
             }
             $where = $w;
         }
         return $where;
+    }
+
+    /**
+     * 数据库连接检查
+     * 2026-10-22
+     */
+    private function checkConn(): void
+    {
+        if(!$this->conn){
+            header("Content-Type: text/html; charset=UTF-8");
+            exit('<div style="text-align: center;margin-top: 30px"><h1>很抱歉,网站升级中,请稍后访问...</h1><p>All Rights Reserved. BTBA. 2014-2025</p></div>');
+        }
+    }
+
+    /**
+     * 字段名校验，防止通过字段名(如直接传入 post())注入
+     * @param string|int $key
+     * @return string
+     * 2026-10-22
+     */
+    private function field(string|int $key): string
+    {
+        if(!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/',(string)$key)){
+            error_log("cls_postgresql: invalid field name: $key");
+            exit('invalid field');
+        }
+        return (string)$key;
+    }
+
+    /**
+     * 值转义，整数原样输出，其它统一用 pg_escape_literal 转义
+     * @param mixed $val
+     * @return string
+     * 2026-10-22
+     */
+    private function literal(mixed $val): string
+    {
+        if(is_int($val))return (string)$val;
+        $this->checkConn();
+        return pg_escape_literal($this->conn,(string)$val);
     }
 
     /**
@@ -168,11 +224,15 @@ class cls_postgresql
      * @return mixed
      * 2021-11-27 20:11:25
      * update 2026-04-20 23:14:53
+     * update 2026-10-22 查不到记录时直接返回 null，不再产生 Undefined array key / read property on null 警告
      */
     public function select_one($table,string|array|object $where='',string $field='*'): mixed
     {
         $where_from = $this->where($where);
-        $result = $this->select($table,$where_from.' limit 1',$field)[0];
+        $result = $this->select($table,$where_from.' limit 1',$field)[0] ?? null;
+        if($result===null){
+            return null;
+        }
         return str_contains($field,',')||$field=='*'?$result:$result->$field;
     }
     /**
@@ -189,13 +249,46 @@ class cls_postgresql
         $where_from = $this->where($where);
         $limit = '';
         if ($this->limit){
-            $page = min(get('page')?:1,$this->zpage);
-            $skip = ($page - 1) * $this->limit;
-            $limit = "limit $this->limit offset $skip";
-            $this->select_count($table,$where_from);
+            $limitNum = $this->limit;
+            $this->select_count($table,$where_from); //会把 total/limit 写进 $GLOBALS，并把 $this->limit 恢复为 0
+            $page = $this->checkPage($limitNum);
+            $skip = ($page - 1) * $limitNum;
+            $limit = "limit $limitNum offset $skip";
         }
         $query = $this->query("select $field from $this->tablePre$table $where_from $limit");
         return $this->fetch_object($query);
+    }
+
+    /**
+     * 校验 ?page= 是否超出这次查询实际的最后一页(total/limit，封顶 zpage)，超出直接 404
+     * select()/select_join() 共用
+     * @param int $limitNum
+     * @return int
+     * 2026-10-22 整合自 btba_www
+     */
+    private function checkPage(int $limitNum): int
+    {
+        $page = max(1,(int)get('page')); //入口 index.php 已校验过只会是正整数，这里再兜一层
+        $zPage = !empty($GLOBALS['total']) ? (int)ceil($GLOBALS['total']/$limitNum) : $this->zpage;
+        $zPage = min($zPage, $this->zpage);
+        if($page > max(1,$zPage)){
+            $this->pageNotFound();
+        }
+        return $page;
+    }
+
+    /**
+     * 翻页超出范围时走 404：优先借 $owner(创建本实例的 controller)的 not404() 渲染 404 模板，
+     * 模板里可能用到 controller 的方法，不能在这里直接 include
+     * 2026-10-22
+     */
+    private function pageNotFound(): void
+    {
+        if($this->owner && method_exists($this->owner,'not404')){
+            $this->owner->not404();
+        }
+        header("HTTP/1.0 404 Not Found");
+        exit('ERROR 404 !');
     }
 
     /**
@@ -234,6 +327,15 @@ class cls_postgresql
     }
 
     /**
+     * select_count 的别名，兼容 btba_www 等项目里的 selectCount() 写法
+     * 2026-10-22
+     */
+    public function selectCount($table, string $where=''): mixed
+    {
+        return $this->select_count($table,$where);
+    }
+
+    /**
      * @param $table
      * @param array|object $data
      * @return int
@@ -242,14 +344,14 @@ class cls_postgresql
     public function insert($table,array|object $data): int
     {
         $data = (array)$this->pg_array($data);
-        $keys = implode(', ', array_keys($data));
-        $values = implode("', '", array_values($data));
+        $keys = implode(', ', array_map([$this,'field'],array_keys($data)));
+        //每个值单独转义 2026-10-22
+        $values = implode(", ", array_map(fn($val)=>$this->literal($val),array_values($data)));
         // 构建带有 RETURNING 的 SQL
-        $result = $this->query("INSERT INTO $this->tablePre$table ($keys) VALUES ('$values') RETURNING id");
-        if ($result) {
-            $row = pg_fetch_assoc($result);
-            $this->getInsertId = $row['id'];
-        }
+        $result = $this->query("INSERT INTO $this->tablePre$table ($keys) VALUES ($values) RETURNING id");
+        if (!$result) return 0;
+        $row = pg_fetch_assoc($result);
+        $this->getInsertId = $row['id'];
         return pg_affected_rows($result);
     }
     public function update($table,array|object|string $where,array|object|string $data): int
@@ -269,7 +371,7 @@ class cls_postgresql
     {
         $where_from = $this->where($where);
         $result = $this->query("delete from $this->tablePre$table $where_from");
-        return pg_affected_rows($result);
+        return $result?pg_affected_rows($result):0;
     }
 
     public function select_id_seq($table){
@@ -293,9 +395,11 @@ class cls_postgresql
         $where_form = $this->where($where);
         $limit = '';
         if ($this->limit){
-            $skip = ((get('page')?:1) - 1) * $this->limit;
-            $limit = "limit $this->limit offset $skip";
-            str_contains($where_form,'where')?$this->selectCount($table[0],$where_form):$this->select_id_seq($table[0]);
+            $limitNum = $this->limit;
+            str_contains($where_form,'where')?$this->select_count($table[0],$where_form):$this->select_id_seq($table[0]);
+            $page = $this->checkPage($limitNum);
+            $skip = ($page - 1) * $limitNum;
+            $limit = "limit $limitNum offset $skip";
         }
         $query = $this->query("select $field from $this->tablePre$table[0] LEFT JOIN $this->tablePre$table[1] using($using) $where_form $limit");
         return $this->fetch_row($query);
@@ -331,8 +435,7 @@ class cls_postgresql
      */
     public function master(): bool
     {
-        $this->conn = pg_connect("host=localhost port=5432 dbname=btba user=$this->user password=$this->password");
-        return (bool)$this->conn;
+        return $this->connect('btba');
     }
     /**
      * @return bool
@@ -341,7 +444,21 @@ class cls_postgresql
      */
     public function user(): bool
     {
-        $this->conn = pg_connect("host=localhost port=5432 dbname=btba_user user=$this->user password=$this->password");
-        return (bool)$this->conn;
+        return $this->connect('btba_user');
+    }
+
+    /**
+     * master()/user() 的统一入口：按库名切换，已在目标库上就不重复切
+     * 给"不确定调用方原来连的是哪个库、用完还要切回去"的共用逻辑使用
+     * @param string $db 'btba'|'btba_user'
+     * @return bool
+     * 2026-10-22 整合自 btba_www
+     */
+    public function switchDb(string $db): bool
+    {
+        if($this->currentDb === $db){
+            return (bool)$this->conn;
+        }
+        return $db === 'btba_user' ? $this->user() : $this->master();
     }
 }
