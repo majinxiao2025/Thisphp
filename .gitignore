@@ -1,0 +1,5 @@
+# macOS Finder 目录信息文件，任何目录下的都不要进版本库
+.DS_Store
+
+# PhpStorm/IDEA 的项目配置目录(含部署配置、本地工作区状态)
+.idea/
